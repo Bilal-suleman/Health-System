@@ -5,7 +5,7 @@ st.title("Prompt Refiner")
 
 # Model selection
 model = st.selectbox("Choose a model:", [
-    "openchat/openchat-3.5-1210",
+    "openchat/openchat-7b",
     "huggingfaceh4/zephyr-7b-beta",
     "mistral/mistral-7b-instruct",
     "nousresearch/nous-capybara-7b",
