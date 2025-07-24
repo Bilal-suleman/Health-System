@@ -4,6 +4,7 @@ from flask import Flask, jsonify, request, render_template_string
 from flask_sqlalchemy import SQLAlchemy
 from datetime import date, timedelta
 import random
+import threading
 
 # --- App & Database Configuration ---
 app = Flask(__name__)
@@ -60,11 +61,23 @@ class Consultation(db.Model):
     def __repr__(self):
         return f'<Consultation {self.id}>'
 
-# --- Ensure tables are created before any request ---
-@app.before_first_request
-def create_tables():
-    db.create_all()
-    seed_initial_data()
+# --- Ensure tables are created only once ---
+# Use a threading lock to ensure thread safety during initialization
+_init_lock = threading.Lock()
+_is_initialized = False
+
+def initialize_database():
+    """Initialize the database: create tables and seed data if needed."""
+    global _is_initialized
+    # Acquire the lock to ensure only one thread initializes
+    with _init_lock:
+        # Double-check the flag inside the lock
+        if not _is_initialized:
+            print("Initializing database...")
+            db.create_all()
+            seed_initial_data()
+            _is_initialized = True
+            print("Database initialization complete.")
 
 # --- Seed Initial Data ---
 def seed_initial_data():
@@ -111,6 +124,14 @@ def seed_initial_data():
             # Optionally, log this error properly in production
     else:
         print("Database already contains data, skipping seeding.")
+
+# --- Ensure tables are created before handling any request ---
+@app.before_request
+def ensure_initialized():
+    # This will run before every request, but initialize_database() handles
+    # ensuring it only does the work once.
+    initialize_database()
+
 
 # --- HTML Template ---
 # We embed the HTML directly into the Python file for a single-file prototype.
@@ -569,8 +590,8 @@ def index():
 
 @app.route('/api/dashboard')
 def dashboard_data():
-    # Ensure tables exist before querying (handles edge cases)
-    db.create_all() 
+    # Ensure tables exist before querying (handled by ensure_initialized)
+    # db.create_all() # Not needed here as ensure_initialized handles it
     
     return jsonify({
         'total_patients': Patient.query.count(),
@@ -586,16 +607,16 @@ def dashboard_data():
 
 @app.route('/api/users')
 def get_users():
-    # Ensure tables exist before querying
-    db.create_all()
+    # Ensure tables exist before querying (handled by ensure_initialized)
+    # db.create_all() # Not needed here
     
     users = User.query.all()
     return jsonify([{'id': u.id, 'name': u.name, 'email': u.email, 'role': u.role} for u in users])
 
 @app.route('/api/patients')
 def get_patients():
-    # Ensure tables exist before querying
-    db.create_all()
+    # Ensure tables exist before querying (handled by ensure_initialized)
+    # db.create_all() # Not needed here
     
     patients = Patient.query.order_by(Patient.id.desc()).all()
     return jsonify([{
@@ -608,8 +629,8 @@ def get_patients():
 
 @app.route('/api/patients', methods=['POST'])
 def add_patient():
-    # Ensure tables exist before adding
-    db.create_all()
+    # Ensure tables exist before adding (handled by ensure_initialized)
+    # db.create_all() # Not needed here
     
     data = request.get_json()
     new_patient = Patient(
@@ -624,8 +645,8 @@ def add_patient():
 
 @app.route('/api/consultations')
 def get_consultations():
-    # Ensure tables exist before querying
-    db.create_all()
+    # Ensure tables exist before querying (handled by ensure_initialized)
+    # db.create_all() # Not needed here
     
     consultations = Consultation.query.order_by(Consultation.consultation_date.desc()).limit(5).all()
     return jsonify([{
@@ -637,8 +658,8 @@ def get_consultations():
 
 @app.route('/api/pharmacy/inventory')
 def get_inventory():
-    # Ensure tables exist before querying
-    db.create_all()
+    # Ensure tables exist before querying (handled by ensure_initialized)
+    # db.create_all() # Not needed here
     
     inventory = Medicine.query.all()
     return jsonify([{
@@ -650,13 +671,11 @@ def get_inventory():
     } for item in inventory])
 
 # --- Run the Application (for local development) ---
+# This block is typically not reached when using Gunicorn, but useful for local `python app.py`
 if __name__ == '__main__':
-    # For local development, you might want to force table creation on startup
-    # even if before_first_request doesn't trigger (e.g., in some debuggers)
-    # Uncomment the next two lines if you have issues locally:
-    # with app.app_context():
-    #     db.create_all()
-    #     seed_initial_data()
+    # Initialize the database when running locally with `python app.py`
+    # This ensures tables are created even if no request comes in immediately.
+    initialize_database()
     
     port = int(os.environ.get('PORT', 5000))
     print(f"Starting Flask application on port {port}...")
