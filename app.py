@@ -34,6 +34,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+init_db()
 migrate = Migrate(app, db)
 
 # --- Flask-Login Setup ---
@@ -555,14 +556,9 @@ navLinks.forEach(link => {
 </html>
 """
 
-# --- Run the Application ---
-# Ensure database is initialized before starting the server
-# This is good practice, especially for the first run on Render.
-init_db()
+
 
 if __name__ == '__main__':
-    # Render will set the PORT environment variable
     port = int(os.environ.get('PORT', 5000))
     logger.info(f"Starting Flask application on port {port}...")
-    # It's generally recommended to set debug=False in production environments like Render
     app.run(host='0.0.0.0', port=port, debug=False)
