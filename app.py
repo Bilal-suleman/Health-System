@@ -26,11 +26,15 @@ logger = logging.getLogger(__name__)
 # --- Flask App Setup ---
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(16)
-db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'healthsys_advanced.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+
+# --- Updated Database Path Configuration ---
+# Allow overriding the database path with an environment variable, defaulting to the current directory
+DB_PATH = os.environ.get('DATABASE_PATH') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'healthsys_advanced.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_PATH}'
+# --- End of updated section ---
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-# Removed init_db() call from here - moved below its definition
+# init_db() # Keep this commented or handled as discussed previously
 migrate = Migrate(app, db)
 # --- Flask-Login Setup ---
 login_manager = LoginManager()
@@ -148,7 +152,6 @@ def permission_required(permission):
         decorated_function.__name__ = f.__name__
         return decorated_function
     return decorator
-
 # --- Database Initialization ---
 # Moved the definition BEFORE any call to init_db()
 def init_db():
@@ -324,9 +327,207 @@ def api_get_patient_consultations(id): # Renamed function
 # Add other API routes similarly (api_create_patient, api_update_patient, etc.)
 # For brevity, I'll stop here, but ensure ALL your API route functions have unique names.
 # --- HTML Templates (Embedded) ---
-# ... (LOGIN_TEMPLATE and DASHBOARD_TEMPLATE remain the same) ...
-# ... (Rest of the file remains the same) ...
-
+LOGIN_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - HealthSys Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+<div class="min-h-screen flex items-center justify-center">
+    <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+        <h2 class="text-2xl font-bold mb-6 text-center">Login to HealthSys Pro</h2>
+        <form method="POST">
+            {{ form.hidden_tag() }}
+            <div class="mb-4">
+                {{ form.email.label(class="block text-sm font-medium text-slate-700 mb-1") }}
+                {{ form.email(class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500") }}
+                {% if form.email.errors %}
+                    <div class="text-red-600 text-sm mt-1">
+                        {% for error in form.email.errors %}<span>{{ error }}</span>{% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+            <div class="mb-4">
+                {{ form.password.label(class="block text-sm font-medium text-slate-700 mb-1") }}
+                {{ form.password(class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500") }}
+                 {% if form.password.errors %}
+                    <div class="text-red-600 text-sm mt-1">
+                        {% for error in form.password.errors %}<span>{{ error }}</span>{% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center">
+                    {{ form.remember_me(class="h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500") }}
+                    {{ form.remember_me.label(class="ml-2 block text-sm text-slate-700") }}
+                </div>
+            </div>
+            {{ form.submit(class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2") }}
+        </form>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mt-4">
+                    {% for category, message in messages %}
+                        <div class="p-3 rounded text-sm {% if category == 'error' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        <div class="mt-4 text-sm text-slate-500">
+            <p><strong>Demo Credentials:</strong></p>
+            <ul class="list-disc pl-5 space-y-1">
+                <li>Admin: admin@healthsys.demo / password</li>
+                <li>Doctor: a.emadi@healthsys.demo / password</li>
+                <li>Nurse: n.hassan@healthsys.demo / password</li>
+                <li>Pharmacist: l.mahmoud@healthsys.demo / password</li>
+            </ul>
+        </div>
+    </div>
+</div>
+</body>
+</html>
+"""
+DASHBOARD_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - HealthSys Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .nav-link.active { background-color: #1e293b; color: white; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+<div class="flex h-screen">
+    <aside class="w-64 bg-slate-900 text-white flex flex-col">
+        <div class="p-6 border-b border-slate-800">
+            <h1 class="text-xl font-bold">HealthSys Pro</h1>
+            <p class="text-sm text-slate-400">{{ current_user.name }}
+                <span class="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded">{{ current_user.role }}</span>
+            </p>
+        </div>
+        <nav class="flex-1 p-4">
+            <ul class="space-y-1">
+                <li><a href="{{ url_for('index') }}" class="nav-link flex items-center px-4 py-2.5 rounded-lg transition-colors duration-200 hover:bg-slate-700 active">
+                    <svg class="w-5 h-5 mr-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Dashboard</a></li>
+                <li><a href="#" data-target="patients" class="nav-link flex items-center px-4 py-2.5 rounded-lg transition-colors duration-200 hover:bg-slate-700">
+                    <svg class="w-5 h-5 mr-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>Patients</a></li>
+                <li><a href="#" data-target="consultations" class="nav-link flex items-center px-4 py-2.5 rounded-lg transition-colors duration-200 hover:bg-slate-700">
+                    <svg class="w-5 h-5 mr-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Consultations</a></li>
+                <li><a href="#" data-target="pharmacy" class="nav-link flex items-center px-4 py-2.5 rounded-lg transition-colors duration-200 hover:bg-slate-700">
+                    <svg class="w-5 h-5 mr-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 0 0 9-9a9 9 0 0 0-9-9a9 9 0 0 0-9 9a9 9 0 0 0 9 9Z"/><path d="m10 13 2 2 2-2"/><path d="M10 9h4"/></svg>Pharmacy</a></li>
+                {% if current_user.role == 'Admin' %}
+                <li><a href="#" data-target="settings" class="nav-link flex items-center px-4 py-2.5 rounded-lg transition-colors duration-200 hover:bg-slate-700">
+                    <svg class="w-5 h-5 mr-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Users</a></li>
+                {% endif %}
+                <li><a href="{{ url_for('logout') }}" class="nav-link flex items-center px-4 py-2.5 rounded-lg transition-colors duration-200 hover:bg-slate-700 text-red-400">
+                    <svg class="w-5 h-5 mr-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Logout</a></li>
+            </ul>
+        </nav>
+    </aside>
+    <main class="flex-1 overflow-auto p-6">
+        <section id="dashboard" class="content-section">
+            <h2 class="text-2xl font-bold mb-6">Dashboard</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-lg bg-blue-100 text-blue-600 mr-4">
+                            <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
+                        </div>
+                        <div>
+                            <p class="text-sm text-slate-500">Total Patients</p>
+                            <p id="total-patients" class="text-2xl font-bold">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-lg bg-green-100 text-green-600 mr-4">
+                            <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                        </div>
+                        <div>
+                            <p class="text-sm text-slate-500">Consultations (This Week)</p>
+                            <p id="consultations-week" class="text-2xl font-bold">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-lg bg-amber-100 text-amber-600 mr-4">
+                            <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 0 0 9-9a9 9 0 0 0-9-9a9 9 0 0 0-9 9a9 9 0 0 0 9 9Z"/><path d="m10 13 2 2 2-2"/><path d="M10 9h4"/></svg>
+                        </div>
+                        <div>
+                            <p class="text-sm text-slate-500">Low Stock Items</p>
+                            <p id="low-stock" class="text-2xl font-bold">0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <h3 class="text-lg font-semibold mb-4">Recent Consultations</h3>
+                <div id="recent-consultations" class="space-y-4">
+                </div>
+            </div>
+        </section>
+        <section id="patients" class="content-section hidden"> <h2 class="text-2xl font-bold">Patients</h2><p>Implement patient list/view here.</p> </section>
+        <section id="consultations" class="content-section hidden"> <h2 class="text-2xl font-bold">Consultations</h2><p>Implement consultation list/view here.</p> </section>
+        <section id="pharmacy" class="content-section hidden"> <h2 class="text-2xl font-bold">Pharmacy</h2><p>Implement pharmacy view here.</p> </section>
+        <section id="settings" class="content-section hidden"> <h2 class="text-2xl font-bold">Users (Admin)</h2><p>Implement user management here.</p> </section>
+    </main>
+</div>
+<script>
+const sections = document.querySelectorAll('.content-section');
+const navLinks = document.querySelectorAll('.nav-link:not([href="{{ url_for(\'logout\') }}"])');
+function showSection(targetId) {
+    sections.forEach(section => section.classList.add('hidden'));
+    const targetSection = document.getElementById(targetId);
+    if (targetSection) targetSection.classList.remove('hidden');
+    navLinks.forEach(link => link.classList.remove('active'));
+    const activeLink = document.querySelector(`.nav-link[data-target="${targetId}"]`);
+    if (activeLink) activeLink.classList.add('active');
+    if(targetId === 'dashboard') loadDashboard();
+}
+async function loadDashboard() {
+    try {
+        const response = await fetch(`/api/dashboard`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        document.getElementById('total-patients').textContent = data.total_patients;
+        document.getElementById('consultations-week').textContent = data.consultations_this_week;
+        document.getElementById('low-stock').textContent = data.low_stock;
+        const container = document.getElementById('recent-consultations');
+        container.innerHTML = '';
+        data.recent_consultations.forEach(c => {
+            const item = document.createElement('div');
+            item.className = 'flex items-center justify-between p-4 border border-slate-200 rounded-lg';
+            item.innerHTML = `
+                <div><p class="font-medium">${c.patient_name}</p><p class="text-sm text-slate-500">${c.diagnosis}</p></div>
+                <div class="text-right"><p class="text-sm font-medium">${c.doctor_name}</p><p class="text-xs text-slate-500">${c.consultation_date}</p></div>
+            `;
+            container.appendChild(item);
+        });
+    } catch (error) { console.error('Dashboard load error:', error); }
+}
+document.addEventListener('DOMContentLoaded', () => { showSection('dashboard'); });
+navLinks.forEach(link => {
+    link.addEventListener('click', (e) => { e.preventDefault(); showSection(link.dataset.target); });
+});
+</script>
+</body>
+</html>
+"""
 if __name__ == '__main__':
     # Ensure the database is initialized when running the script directly
     # This is typically used for development. For production (Gunicorn), the app factory pattern or migrations are preferred.
