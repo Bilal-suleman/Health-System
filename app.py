@@ -34,7 +34,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_PATH}'
 # --- End of updated section ---
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-# init_db() # Keep this commented or handled as discussed previously
+# init_db() # Keep this commented for now
 migrate = Migrate(app, db)
 # --- Flask-Login Setup ---
 login_manager = LoginManager()
@@ -58,7 +58,11 @@ class User(UserMixin, db.Model):
         return f'<User {self.name} ({self.role})>'
 @login_manager.user_loader
 def load_user(id):
-    return User.query.get(int(id))
+    # Add logging to see if this is called and what ID it gets
+    logger.info(f"load_user called with ID: {id}")
+    user = User.query.get(int(id))
+    logger.info(f"load_user found user: {user}")
+    return user
 class Patient(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     qid = db.Column(db.String(20), unique=True, nullable=False, index=True)
@@ -155,12 +159,25 @@ def permission_required(permission):
 # --- Database Initialization ---
 # Moved the definition BEFORE any call to init_db()
 def init_db():
-    with app.app_context(): # Ensure app context is available
-        db.create_all()
-        logger.info("Database tables created/checked.")
-        if User.query.first() is None:
-            logger.info("Seeding initial data...")
-            try:
+    logger.info("Attempting to initialize database...")
+    try:
+        with app.app_context():
+            logger.info("App context acquired for DB init.")
+            # Check if tables exist by checking one critical table
+            inspector = db.inspect(db.engine)
+            tables = inspector.get_table_names()
+            logger.info(f"Existing tables: {tables}")
+
+            if 'user' not in tables:
+                logger.info("User table not found, creating all tables...")
+                db.create_all()
+                logger.info("Database tables created.")
+            else:
+                logger.info("User table found, assuming tables exist.")
+
+            if User.query.first() is None:
+                logger.info("Seeding initial data...")
+                # Seeding logic remains the same
                 users_data = [
                     {'name': 'Dr. Aisha Al-Emadi', 'email': 'a.emadi@healthsys.demo', 'role': 'Doctor', 'password': 'password'},
                     {'name': 'Nadia Hassan', 'email': 'n.hassan@healthsys.demo', 'role': 'Nurse', 'password': 'password'},
@@ -212,40 +229,56 @@ def init_db():
                         db.session.add_all(prescriptions)
                         db.session.commit()
                 logger.info("Database seeded successfully.")
-            except Exception as e:
-                db.session.rollback()
-                logger.error(f"Error seeding database: {e}")
-                print(f"Error seeding database: {e}", file=sys.stderr)
-        else:
-            logger.info("Database already contains data, skipping seeding.")
+            else:
+                logger.info("Database already contains data, skipping seeding.")
+    except Exception as e:
+         logger.error(f"Error during database initialization: {e}", exc_info=True) # Log full traceback
+         # Re-raise the exception to potentially halt the app startup if DB init is critical
+         # raise # Uncommenting this might prevent the app from starting if DB fails
 
-# --- Call init_db() AFTER its definition ---
-# This ensures the function exists before calling it.
-# For production/Gunicorn, you might manage this differently (e.g., via a setup script or migration).
-# Calling it here will run it every time the app module is imported, which might be okay for simple dev setup.
-# Consider if you want this automatic or manual.
-# init_db() # <-- Uncomment this line if you want automatic seeding on import.
-# It's often better practice to call it manually or via a separate command/script for production.
-
+# --- Call init_db() AFTER its definition and AFTER db/migrate are set up ---
+# Ensure it's called once the app is fully configured.
+# We'll call it here, but wrap it in a try/except to prevent startup crash if DB path is wrong.
+try:
+    logger.info("Calling init_db() during app import...")
+    init_db()
+    logger.info("init_db() completed during app import.")
+except Exception as e:
+    logger.critical(f"Failed to initialize database on app import: {e}", exc_info=True)
 # --- Routes ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    logger.info("Login route accessed")
     if current_user.is_authenticated:
+        logger.info("User already authenticated, redirecting to index")
         return redirect(url_for('index'))
     form = LoginForm()
+    logger.info("LoginForm instantiated")
     if form.validate_on_submit():
+        logger.info("Form validated successfully")
+        logger.info(f"Attempting login for email: {form.email.data}")
         user = User.query.filter_by(email=form.email.data).first()
+        logger.info(f"User query result: {user}")
         if user and user.check_password(form.password.data):
+            logger.info(f"Password correct for user {user.email}")
             login_user(user, remember=form.remember_me.data)
             logger.info(f"User {user.email} logged in.")
             flash('Logged in successfully.', 'success')
             next_page = request.args.get('next')
-            if not next_page or '.' in next_page:
+            logger.info(f"Next page from args: {next_page}")
+            if not next_page or '.' in next_page: # Basic security check
                 next_page = url_for('index')
+            logger.info(f"Redirecting to: {next_page}")
             return redirect(next_page)
         else:
+            logger.warning(f"Invalid email or password attempt for {form.email.data}")
             flash('Invalid email or password', 'error')
-            logger.warning(f"Failed login attempt for {form.email.data}")
+    else:
+        logger.info("Form did not validate or was not submitted")
+        if form.errors:
+             logger.info(f"Form errors: {form.errors}")
+
+    logger.info("Rendering login template")
     return render_template_string(LOGIN_TEMPLATE, title='Sign In', form=form)
 @app.route('/logout')
 def logout():
@@ -257,11 +290,13 @@ def logout():
 @app.route('/index')
 @login_required
 def index():
+    logger.info("Index route accessed")
     return render_template_string(DASHBOARD_TEMPLATE, title='Dashboard')
 # --- API Routes ---
 @app.route('/api/dashboard')
 @permission_required('view_patients')
 def api_dashboard():
+    logger.info("API Dashboard route accessed")
     one_week_ago = date.today() - timedelta(days=7)
     consultations_this_week = Consultation.query.filter(Consultation.consultation_date >= one_week_ago).count()
     return jsonify({
